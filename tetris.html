@@ -79,16 +79,19 @@
         let currentPiece = null;
         let currentX = 0;
         let currentY = 0;
+        let currentColorIndex = 0;
 
         function createPiece() {
             const index = Math.floor(Math.random() * tetrominoes.length);
             currentPiece = tetrominoes[index];
+            currentColorIndex = index;
             currentX = Math.floor((cols - currentPiece[0].length) / 2);
             currentY = 0;
             if (collides(currentPiece, currentX, currentY)) {
                 gameOver();
                 return false;
             }
+            drawBoard();
             return true;
         }
 
@@ -108,8 +111,12 @@
             ctx.fillStyle = colors[colorIndex];
             for (let py = 0; py < piece.length; py++) {
                 for (let px = 0; px < piece[py].length; px++) {
-                    if (piece[py][px] && y + py >= 0) {
-                        ctx.fillRect((x + px) * gridSize, (y + py) * gridSize, gridSize - 1, gridSize - 1);
+                    if (piece[py][px]) {
+                        const boardY = Math.floor(y + py);
+                        const boardX = Math.floor(x + px);
+                        if (boardY >= 0 && boardY < rows && boardX >= 0 && boardX < cols) {
+                            ctx.fillRect(boardX * gridSize, boardY * gridSize, gridSize - 1, gridSize - 1);
+                        }
                     }
                 }
             }
@@ -119,8 +126,8 @@
             for (let py = 0; py < piece.length; py++) {
                 for (let px = 0; px < piece[py].length; px++) {
                     if (piece[py][px]) {
-                        const boardX = x + px;
-                        const boardY = y + py;
+                        const boardX = Math.floor(x + px);
+                        const boardY = Math.floor(y + py);
                         if (boardX < 0 || boardX >= cols || boardY >= rows) {
                             return true;
                         }
@@ -138,19 +145,21 @@
             for (let py = 0; py < currentPiece.length; py++) {
                 for (let px = 0; px < currentPiece[py].length; px++) {
                     if (currentPiece[py][px]) {
-                        const boardY = currentY + py;
-                        const boardX = currentX + px;
-                        if (boardY >= 0 && boardX >= 0 && boardX < cols) {
-                            board[boardY][boardX] = tetrominoes.indexOf(currentPiece) + 1;
+                        const boardY = Math.floor(currentY + py);
+                        const boardX = Math.floor(currentX + px);
+                        if (boardY >= 0 && boardY < rows && boardX >= 0 && boardX < cols) {
+                            board[boardY][boardX] = currentColorIndex + 1;
                             validMerge = true;
                         }
                     }
                 }
             }
-            if (validMerge) {
-                drawBoard();
+            if (!validMerge) {
+                return false;
             }
-            return validMerge;
+            currentPiece = null;
+            drawBoard();
+            return true;
         }
 
         function clearLines() {
@@ -170,40 +179,35 @@
         }
 
         function rotatePiece() {
+            if (!currentPiece) return;
             const rotated = Array(currentPiece[0].length).fill().map(() => Array(currentPiece.length).fill(0));
             for (let y = 0; y < currentPiece.length; y++) {
                 for (let x = 0; x < currentPiece[y].length; x++) {
                     rotated[x][currentPiece.length - 1 - y] = currentPiece[y][x];
                 }
             }
-            // Enhanced wall kicks
             const kicks = [
-                { dx: 0, dy: 0 },   // No offset
-                { dx: -1, dy: 0 },  // Left
-                { dx: 1, dy: 0 },   // Right
-                { dx: -2, dy: 0 },  // Left 2
-                { dx: 2, dy: 0 },   // Right 2
-                { dx: 0, dy: -1 },  // Up
-                { dx: -1, dy: -1 }, // Left-up
-                { dx: 1, dy: -1 },  // Right-up
-                { dx: 0, dy: 1 },   // Down
-                { dx: -1, dy: 1 },  // Left-down
-                { dx: 1, dy: 1 }    // Right-down
+                { dx: 0, dy: 0 },
+                { dx: -1, dy: 0 },
+                { dx: 1, dy: 0 },
+                { dx: 0, dy: -1 }
             ];
             for (let kick of kicks) {
                 const newX = currentX + kick.dx;
                 const newY = currentY + kick.dy;
-                if (!collides(rotated, newX, newY)) {
-                    currentPiece = rotated;
-                    currentX = newX;
-                    currentY = newY;
-                    return;
+                if (newX >= 0 && newX + rotated[0].length <= cols && newY >= 0 && newY + rotated.length <= rows) {
+                    if (!collides(rotated, newX, newY)) {
+                        currentPiece = rotated;
+                        currentX = newX;
+                        currentY = newY;
+                        return;
+                    }
                 }
             }
-            // Prevent rotation if no valid position is found
         }
 
         function movePiece(dx, dy) {
+            if (!currentPiece) return false;
             if (!collides(currentPiece, currentX + dx, currentY + dy)) {
                 currentX += dx;
                 currentY += dy;
@@ -213,15 +217,20 @@
         }
 
         function dropPiece() {
+            if (!currentPiece) return;
             if (!movePiece(0, 1)) {
-                if (mergePiece()) {
-                    clearLines();
-                    setTimeout(() => {
-                        if (!gameIsOver) createPiece();
-                    }, 100);
-                } else {
+                if (!mergePiece()) {
                     gameOver();
+                    return;
                 }
+                clearLines();
+                setTimeout(() => {
+                    if (!gameIsOver) {
+                        if (!createPiece()) {
+                            gameOver();
+                        }
+                    }
+                }, 200);
             }
         }
 
@@ -267,14 +276,16 @@
             if (!gameIsOver) {
                 drawBoard();
                 if (currentPiece) {
-                    drawPiece(currentPiece, currentX, currentY, tetrominoes.indexOf(currentPiece));
+                    drawPiece(currentPiece, currentX, currentY, currentColorIndex);
                 }
             }
             requestAnimationFrame(gameLoop);
         }
 
         setInterval(() => {
-            if (!gameIsOver && currentPiece) dropPiece();
+            if (!gameIsOver && currentPiece) {
+                dropPiece();
+            }
         }, 1000);
 
         createPiece();
